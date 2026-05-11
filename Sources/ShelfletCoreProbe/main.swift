@@ -73,6 +73,22 @@ private func probeCacheManager(checkCount: inout Int) throws {
     } catch CacheManagerError.pathEscapesCache {
         checkCount += 1
     }
+
+    let textID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+    let textFile = try manager.writeTextSnippet("hello text", id: textID)
+    try expectEqual(
+        try String(contentsOf: textFile, encoding: .utf8),
+        "hello text",
+        "text snippet file should contain dragged text"
+    )
+    checkCount += 1
+
+    try expectEqual(
+        try manager.relativePath(for: textFile),
+        "Text/Text Snippet 33333333-3333-3333-3333-333333333333.txt",
+        "text snippet relative path should be stable"
+    )
+    checkCount += 1
 }
 
 private func probeDragPolicies(checkCount: inout Int) throws {
@@ -93,6 +109,13 @@ private func probeDragPolicies(checkCount: inout Int) throws {
         DragIntakePolicy.acceptedOperation(source: [.move], payload: DragPayloadSummary(filePromiseCount: 1)),
         .move,
         "supported payload should fall back to move"
+    )
+    checkCount += 1
+
+    try expectEqual(
+        DragIntakePolicy.acceptedOperation(source: [.copy], payload: DragPayloadSummary(textSnippetCount: 1)),
+        .copy,
+        "plain text payload should accept copy"
     )
     checkCount += 1
 

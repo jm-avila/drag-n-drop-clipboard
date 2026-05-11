@@ -15,6 +15,7 @@ public struct DragOperationMask: OptionSet, Equatable, Sendable {
 public enum DragPayloadKind: Equatable, Sendable {
     case fileURLs
     case filePromises
+    case plainText
     case mixedSupported
     case unsupported
 }
@@ -22,32 +23,48 @@ public enum DragPayloadKind: Equatable, Sendable {
 public struct DragPayloadSummary: Equatable, Sendable {
     public var fileURLCount: Int
     public var filePromiseCount: Int
+    public var textSnippetCount: Int
     public var unsupportedCount: Int
 
-    public init(fileURLCount: Int = 0, filePromiseCount: Int = 0, unsupportedCount: Int = 0) {
+    public init(
+        fileURLCount: Int = 0,
+        filePromiseCount: Int = 0,
+        textSnippetCount: Int = 0,
+        unsupportedCount: Int = 0
+    ) {
         self.fileURLCount = fileURLCount
         self.filePromiseCount = filePromiseCount
+        self.textSnippetCount = textSnippetCount
         self.unsupportedCount = unsupportedCount
     }
 
     public var kind: DragPayloadKind {
         let hasURLs = fileURLCount > 0
         let hasPromises = filePromiseCount > 0
+        let hasText = textSnippetCount > 0
+        let supportedKinds = [hasURLs, hasPromises, hasText].filter { $0 }.count
 
-        switch (hasURLs, hasPromises) {
-        case (true, false):
-            return .fileURLs
-        case (false, true):
-            return .filePromises
-        case (true, true):
+        if supportedKinds > 1 {
             return .mixedSupported
-        case (false, false):
-            return .unsupported
         }
+
+        if hasURLs {
+            return .fileURLs
+        }
+
+        if hasPromises {
+            return .filePromises
+        }
+
+        if hasText {
+            return .plainText
+        }
+
+        return .unsupported
     }
 
     public var isSupported: Bool {
-        fileURLCount + filePromiseCount > 0
+        fileURLCount + filePromiseCount + textSnippetCount > 0
     }
 }
 

@@ -62,7 +62,7 @@ final class EdgeDropView: NSView {
         self.settingsProvider = settingsProvider
         super.init(frame: .zero)
 
-        var draggedTypes: [NSPasteboard.PasteboardType] = [.fileURL]
+        var draggedTypes: [NSPasteboard.PasteboardType] = [.fileURL, .string]
         draggedTypes.append(contentsOf: NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType(rawValue: $0) })
         registerForDraggedTypes(draggedTypes)
     }

@@ -25,13 +25,15 @@ struct DragClassification {
     var sequenceNumber: Int
     var fileURLs: [URL]
     var filePromises: [NSFilePromiseReceiver]
+    var textSnippets: [String]
     var sourceApplication: String?
 
     var summary: DragPayloadSummary {
         DragPayloadSummary(
             fileURLCount: fileURLs.count,
             filePromiseCount: filePromises.count,
-            unsupportedCount: fileURLs.isEmpty && filePromises.isEmpty ? 1 : 0
+            textSnippetCount: textSnippets.count,
+            unsupportedCount: fileURLs.isEmpty && filePromises.isEmpty && textSnippets.isEmpty ? 1 : 0
         )
     }
 }
@@ -61,7 +63,7 @@ final class DragIntakeCoordinator {
         let accepted = DragIntakePolicy.acceptedOperation(source: sourceMask, payload: classification.summary)
 
         logger.info(
-            "Drag entered seq=\(classification.sequenceNumber, privacy: .public) urls=\(classification.fileURLs.count, privacy: .public) promises=\(classification.filePromises.count, privacy: .public) accepted=\(accepted.rawValue, privacy: .public)"
+            "Drag entered seq=\(classification.sequenceNumber, privacy: .public) urls=\(classification.fileURLs.count, privacy: .public) promises=\(classification.filePromises.count, privacy: .public) text=\(classification.textSnippets.count, privacy: .public) accepted=\(accepted.rawValue, privacy: .public)"
         )
 
         return accepted.nsDragOperation
@@ -90,6 +92,7 @@ final class DragIntakeCoordinator {
         }
 
         importFileURLs(classification.fileURLs, sourceApplication: classification.sourceApplication)
+        importTextSnippets(classification.textSnippets, sourceApplication: classification.sourceApplication)
         materializePromises(classification.filePromises, sourceApplication: classification.sourceApplication)
         classificationsBySequence.removeValue(forKey: classification.sequenceNumber)
         return true
@@ -115,10 +118,12 @@ final class DragIntakeCoordinator {
         let pasteboard = sender.draggingPasteboard
         let fileURLs = readFileURLs(from: pasteboard)
         let promises = readFilePromises(from: pasteboard)
+        let textSnippets = fileURLs.isEmpty && promises.isEmpty ? readPlainText(from: pasteboard) : []
         let classification = DragClassification(
             sequenceNumber: sender.draggingSequenceNumber,
             fileURLs: fileURLs,
             filePromises: promises,
+            textSnippets: textSnippets,
             sourceApplication: sender.draggingSource.map { String(describing: type(of: $0)) }
         )
         classificationsBySequence[sender.draggingSequenceNumber] = classification
@@ -151,12 +156,42 @@ final class DragIntakeCoordinator {
         return pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self], options: nil) as? [NSFilePromiseReceiver] ?? []
     }
 
+    private func readPlainText(from pasteboard: NSPasteboard) -> [String] {
+        guard let text = pasteboard.string(forType: .string) else {
+            return []
+        }
+
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return []
+        }
+
+        return [text]
+    }
+
     private func importFileURLs(_ urls: [URL], sourceApplication: String?) {
         let importedItems = urls.compactMap { url -> ShelfItem? in
             do {
                 return try itemFactory.makeReferencedItem(from: url, sourceApplication: sourceApplication)
             } catch {
                 logger.error("Failed to import file URL \(url.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+                return nil
+            }
+        }
+
+        model.add(importedItems)
+    }
+
+    private func importTextSnippets(_ snippets: [String], sourceApplication: String?) {
+        let importedItems = snippets.compactMap { snippet -> ShelfItem? in
+            do {
+                let fileURL = try cacheManager.writeTextSnippet(snippet)
+                return try itemFactory.makeCachedItem(
+                    from: fileURL,
+                    sourceApplication: sourceApplication,
+                    promiseTypeIdentifier: "public.plain-text"
+                )
+            } catch {
+                logger.error("Failed to import text snippet: \(String(describing: error), privacy: .public)")
                 return nil
             }
         }

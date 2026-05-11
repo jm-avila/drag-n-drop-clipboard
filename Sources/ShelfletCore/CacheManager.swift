@@ -31,6 +31,19 @@ public final class CacheManager {
         return directory
     }
 
+    public func writeTextSnippet(_ text: String, id: UUID = UUID()) throws -> URL {
+        try ensureRootExists()
+
+        let directory = rootURL.appendingPathComponent("Text", isDirectory: true).standardizedFileURL
+        try validateInsideRoot(directory)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let fileURL = directory.appendingPathComponent("Text Snippet \(id.uuidString).txt").standardizedFileURL
+        try validateInsideRoot(fileURL)
+        try Data(text.utf8).write(to: fileURL, options: [.atomic])
+        return fileURL
+    }
+
     public func relativePath(for fileURL: URL) throws -> String {
         let standardizedRoot = rootURL.standardizedFileURL.path
         let standardizedPath = fileURL.standardizedFileURL.path
