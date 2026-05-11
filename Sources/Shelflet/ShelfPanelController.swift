@@ -15,6 +15,8 @@ final class ShelfPanelController: NSObject {
     private let collectionView: ShelfCollectionView
     private var items: [ShelfItem] = []
     private var activeDragResources: [UUID: SecurityScopedURL] = [:]
+    private var hideWorkItem: DispatchWorkItem?
+    private var isDraggingOut = false
 
     init(
         model: ShelfModel,
@@ -49,6 +51,8 @@ final class ShelfPanelController: NSObject {
     }
 
     func show(on screen: NSScreen? = NSScreen.screens.first, edge: ShelfEdge? = nil) {
+        cancelAutoHide()
+
         let targetScreen = screen ?? NSScreen.screens.first
         guard let targetScreen else {
             return
@@ -72,7 +76,25 @@ final class ShelfPanelController: NSObject {
     }
 
     func hide() {
+        cancelAutoHide()
         panel.orderOut(nil)
+    }
+
+    func scheduleAutoHide(after delay: TimeInterval = 0.55) {
+        hideWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, !self.isDraggingOut else {
+                return
+            }
+
+            if !self.panel.frame.contains(NSEvent.mouseLocation) {
+                self.panel.orderOut(nil)
+            }
+        }
+
+        hideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
     func clearShelf() {
@@ -92,7 +114,13 @@ final class ShelfPanelController: NSObject {
         panel.isFloatingPanel = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
 
-        let visualEffectView = NSVisualEffectView()
+        let visualEffectView = ShelfBackgroundView()
+        visualEffectView.onMouseEntered = { [weak self] in
+            self?.cancelAutoHide()
+        }
+        visualEffectView.onMouseExited = { [weak self] in
+            self?.scheduleAutoHide()
+        }
         visualEffectView.material = .popover
         visualEffectView.blendingMode = .behindWindow
         visualEffectView.state = .active
@@ -217,6 +245,11 @@ final class ShelfPanelController: NSObject {
         }
         activeDragResources.removeAll()
     }
+
+    private func cancelAutoHide() {
+        hideWorkItem?.cancel()
+        hideWorkItem = nil
+    }
 }
 
 extension ShelfPanelController: NSCollectionViewDataSource, NSCollectionViewDelegate {
@@ -271,10 +304,24 @@ extension ShelfPanelController: NSCollectionViewDataSource, NSCollectionViewDele
     func collectionView(
         _ collectionView: NSCollectionView,
         draggingSession session: NSDraggingSession,
+        willBeginAt screenPoint: NSPoint,
+        forItemsAt indexPaths: Set<IndexPath>
+    ) {
+        isDraggingOut = true
+        cancelAutoHide()
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        draggingSession session: NSDraggingSession,
         endedAt screenPoint: NSPoint,
         dragOperation operation: NSDragOperation
     ) {
-        defer { clearActiveDragResources() }
+        defer {
+            isDraggingOut = false
+            clearActiveDragResources()
+            scheduleAutoHide()
+        }
 
         let outcome: DragOutOutcome
         if operation.isEmpty {
@@ -318,6 +365,33 @@ final class ShelfCollectionView: NSCollectionView {
         }
 
         super.keyDown(with: event)
+    }
+}
+
+final class ShelfBackgroundView: NSVisualEffectView {
+    var onMouseEntered: (() -> Void)?
+    var onMouseExited: (() -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        for trackingArea in trackingAreas {
+            removeTrackingArea(trackingArea)
+        }
+
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited],
+            owner: self
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onMouseEntered?()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onMouseExited?()
     }
 }
 

@@ -22,6 +22,7 @@ final class EdgeDropWindow: NSPanel {
         self.isOpaque = false
         self.hasShadow = false
         self.ignoresMouseEvents = false
+        self.acceptsMouseMovedEvents = true
         self.collectionBehavior = [
             .canJoinAllSpaces,
             .fullScreenAuxiliary,
@@ -104,6 +105,30 @@ final class EdgeDropView: NSView {
     override func draggingEnded(_ sender: NSDraggingInfo) {
         revealWorkItem?.cancel()
         revealWorkItem = nil
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        for trackingArea in trackingAreas {
+            removeTrackingArea(trackingArea)
+        }
+
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited],
+            owner: self
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        scheduleReveal()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        revealWorkItem?.cancel()
+        revealWorkItem = nil
+        shelfPanelController.scheduleAutoHide()
     }
 
     private func scheduleReveal() {
